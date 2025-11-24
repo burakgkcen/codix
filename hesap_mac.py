@@ -7,6 +7,7 @@ anlaşılır bir uyarı olarak döner.
 from __future__ import annotations
 
 import argparse
+import sys
 from typing import Callable, Dict
 
 
@@ -19,7 +20,13 @@ def safe_divide(x: float, y: float) -> float:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Basit hesap makinesi")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Basit hesap makinesi.\n"
+            "İşlem ve iki sayı girin. Örnek: 'python hesap_mac.py topla 2 3'"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
     parser.add_argument("operation", choices=["topla", "cikar", "carp", "bol"], help="Yapılacak işlem")
     parser.add_argument("x", type=float, help="Birinci sayı")
     parser.add_argument("y", type=float, help="İkinci sayı")
@@ -34,7 +41,13 @@ def main() -> None:
         "bol": safe_divide,
     }
 
-    args = build_parser().parse_args()
+    parser = build_parser()
+
+    if len(sys.argv) == 1:
+        parser.print_help()
+        parser.exit()
+
+    args = parser.parse_args()
 
     hesapla = operations[args.operation]
     try:
