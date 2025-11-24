@@ -308,12 +308,18 @@ def main() -> None:
     args = parse_args()
     parameters = default_parameters()
     issues: Dict[str, List[str]] = {"unknown_parameters": [], "invalid_statuses": []}
+    errors: List[str] = []
 
     if args.input:
-        overrides = load_status_overrides(args.input)
-        file_issues = apply_overrides(parameters, overrides)
-        for key, values in file_issues.items():
-            issues[key].extend(values)
+        try:
+            overrides = load_status_overrides(args.input)
+            file_issues = apply_overrides(parameters, overrides)
+            for key, values in file_issues.items():
+                issues[key].extend(values)
+        except FileNotFoundError:
+            errors.append(f"Input file not found: {args.input}")
+        except json.JSONDecodeError as exc:
+            errors.append(f"Invalid JSON in {args.input}: {exc}")
 
     if args.status:
         inline_overrides = parse_inline_status(args.status)
@@ -322,6 +328,12 @@ def main() -> None:
             issues[key].extend(values)
 
     summary = summarize(parameters, top_n=args.top)
+
+    if errors:
+        print("-- Input errors --")
+        for message in errors:
+            print(f"- {message}")
+        print("Continuing with available data to compute an overall score.\n")
 
     if any(values for values in issues.values()):
         print("-- Input warnings --")
