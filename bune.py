@@ -193,13 +193,25 @@ def load_status_overrides(path: Path) -> Dict[str, Status]:
     return overrides
 
 
-def apply_overrides(parameters: Iterable[Parameter], overrides: Dict[str, Status]) -> None:
+def apply_overrides(parameters: Iterable[Parameter], overrides: Dict[str, Status]) -> Dict[str, List[str]]:
     lookup = {p.name.lower(): p for p in parameters}
+    issues: Dict[str, List[str]] = {"unknown_parameters": [], "invalid_statuses": []}
+
     for name, status in overrides.items():
         param = lookup.get(name.lower())
         normalized = str(status).strip().lower()
-        if param and normalized in ALLOWED_STATUSES:
-            param.status = normalized
+
+        if not param:
+            issues["unknown_parameters"].append(name)
+            continue
+
+        if normalized not in ALLOWED_STATUSES:
+            issues["invalid_statuses"].append(f"{name}={status}")
+            continue
+
+        param.status = normalized
+
+    return issues
 
 
 def parse_args() -> argparse.Namespace:
@@ -295,16 +307,51 @@ def format_report(summary: Dict[str, object]) -> str:
 def main() -> None:
     args = parse_args()
     parameters = default_parameters()
+    issues: Dict[str, List[str]] = {"unknown_parameters": [], "invalid_statuses": []}
+    errors: List[str] = []
 
     if args.input:
-        overrides = load_status_overrides(args.input)
-        apply_overrides(parameters, overrides)
+        try:
+            overrides = load_status_overrides(args.input)
+            file_issues = apply_overrides(parameters, overrides)
+            for key, values in file_issues.items():
+                issues[key].extend(values)
+        except FileNotFoundError:
+            errors.append(f"Input file not found: {args.input}")
+        except json.JSONDecodeError as exc:
+            errors.append(f"Invalid JSON in {args.input}: {exc}")
 
     if args.status:
         inline_overrides = parse_inline_status(args.status)
-        apply_overrides(parameters, inline_overrides)
+        inline_issues = apply_overrides(parameters, inline_overrides)
+        for key, values in inline_issues.items():
+            issues[key].extend(values)
 
     summary = summarize(parameters, top_n=args.top)
+
+    if errors:
+        print("-- Input errors --")
+        for message in errors:
+            print(f"- {message}")
+        print("Continuing with available data to compute an overall score.\n")
+
+    if any(values for values in issues.values()):
+        print("-- Input warnings --")
+        if issues["invalid_statuses"]:
+            print("Ignored invalid statuses (use pass/warn/fail/unknown):")
+            for item in issues["invalid_statuses"]:
+                print(f"- {item}")
+        if issues["unknown_parameters"]:
+            print("Entries not matched to known parameters:")
+            for item in issues["unknown_parameters"]:
+                print(f"- {item}")
+        print()
+
+    if all(p.status == "unknown" for p in parameters):
+        print("No evidence provided yet; all 110 controls are still 'unknown'.")
+        print("Use --status 'Control=pass|warn|fail' or --input findings.json to score.")
+        print()
+
     print(format_report(summary))
 
 
